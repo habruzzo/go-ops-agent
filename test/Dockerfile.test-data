@@ -1,0 +1,15 @@
+FROM golang:1.21-alpine AS builder
+
+WORKDIR /app
+COPY . .
+RUN go mod download
+RUN go build -o test-data-generator ./test/cmd/test-data-generator
+
+FROM alpine:latest
+RUN apk --no-cache add ca-certificates
+WORKDIR /root/
+
+COPY --from=builder /app/test-data-generator .
+
+EXPOSE 8080
+CMD ["./test-data-generator"]

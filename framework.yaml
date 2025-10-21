@@ -1,0 +1,38 @@
+logging:
+  level: info
+  format: text
+  output: stdout
+
+plugins:
+  - name: prometheus
+    type: prometheus
+    enabled: true
+    config:
+      url: http://localhost:9090
+      interval: 30s
+      queries:
+        - up
+        - cpu_usage_percent
+        - memory_usage_percent
+
+  - name: anomaly-detector
+    type: anomaly
+    enabled: true
+    config:
+      threshold: 2.0
+
+  - name: logger
+    type: log
+    enabled: true
+    config:
+      level: info
+
+  - name: ai-agent
+    type: ai
+    enabled: false  # Set to true and add your API key to enable
+    config:
+      api_key: "your-openai-api-key-here"
+      model: "gpt-3.5-turbo"
+
+agent:
+  default_agent: "ai-agent"

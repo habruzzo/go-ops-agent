@@ -1,0 +1,36 @@
+logging:
+  level: info
+  format: text
+  output: stdout
+
+agent:
+  default_agent: "test-ai"
+
+plugins:
+  - name: "prometheus-collector"
+    type: "prometheus"
+    config:
+      url: "http://localhost:9090"
+      interval: "5s"
+      queries: 
+        - "up"
+        - "cpu_usage_percent"
+        - "memory_usage_percent"
+        - "response_time_ms"
+  
+  - name: "anomaly-analyzer"
+    type: "anomaly"
+    config:
+      threshold: 2.0
+  
+  - name: "logger-responder"
+    type: "logger"
+    config:
+      level: "info"
+  
+  - name: "ai-agent"
+    type: "ai"
+    config:
+      api_key: "test-key"
+      model: "gpt-3.5-turbo"
+      max_tokens: 150
