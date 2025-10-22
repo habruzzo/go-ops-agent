@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-framework
+  namespace: agent-framework
+  labels:
+    app: agent-framework
+    component: core
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: agent-framework
+  template:
+    metadata:
+      labels:
+        app: agent-framework
+        component: core
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: agent-framework
+        image: agent-framework:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: metrics
+          protocol: TCP
+        - containerPort: 9090
+          name: health
+          protocol: TCP
+        env:
+        - name: ANTHROPIC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: agent-secrets
+              key: anthropic-api-key
+        - name: OPENAI_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: agent-secrets
+              key: openai-api-key
+        - name: CONFIG_FILE
+          value: "/etc/config/framework.yaml"
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/config
+        - name: logs-volume
+          mountPath: /var/log/agent
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 9090
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 9090
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /health
+            port: 9090
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 10
+      volumes:
+      - name: config-volume
+        configMap:
+          name: agent-config
+      - name: logs-volume
+        emptyDir: {}
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+

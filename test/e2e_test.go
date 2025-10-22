@@ -5,18 +5,19 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/holden/agent/config"
-	"github.com/holden/agent/core"
-	"github.com/holden/agent/plugins/agents"
-	"github.com/holden/agent/plugins/analyzers"
-	"github.com/holden/agent/plugins/collectors"
-	"github.com/holden/agent/plugins/responders"
+	"github.com/habruzzo/agent/config"
+	"github.com/habruzzo/agent/core"
+	"github.com/habruzzo/agent/plugins/agents"
+	"github.com/habruzzo/agent/plugins/analyzers"
+	"github.com/habruzzo/agent/plugins/collectors"
+	"github.com/habruzzo/agent/plugins/responders"
 )
 
 // TestDataGenerator generates realistic test data
@@ -132,8 +133,9 @@ type MockPrometheusServer struct {
 }
 
 func NewMockPrometheusServer() *MockPrometheusServer {
+	// Use port 0 to let the system assign an available port
 	return &MockPrometheusServer{
-		port: "9091", // Use different port to avoid conflicts
+		port: "0",
 	}
 }
 
@@ -164,13 +166,22 @@ func (m *MockPrometheusServer) Start() error {
 		w.Write([]byte(response))
 	})
 
+	// Create listener to get actual port
+	listener, err := net.Listen("tcp", ":0")
+	if err != nil {
+		return err
+	}
+
+	// Get the actual port that was assigned
+	addr := listener.Addr().(*net.TCPAddr)
+	m.port = fmt.Sprintf("%d", addr.Port)
+
 	m.server = &http.Server{
-		Addr:    ":" + m.port,
 		Handler: mux,
 	}
 
 	go func() {
-		if err := m.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := m.server.Serve(listener); err != nil && err != http.ErrServerClosed {
 			log.Printf("Mock Prometheus server error: %v", err)
 		}
 	}()
@@ -247,15 +258,11 @@ func testScenario(t *testing.T, scenario TestScenario) {
 
 	// Create framework configuration
 	cfg := &core.FrameworkConfig{
-		Logging: core.LoggingConfig{
-			Level:  "info",
-			Format: "text",
-			Output: "stdout",
-		},
-		Agent: core.AgentConfig{
-			DefaultAgent: "test-ai",
-		},
-		Plugins: []core.PluginConfig{},
+		LogLevel:     "info",
+		LogFormat:    "text",
+		LogOutput:    "stdout",
+		DefaultAgent: "test-ai",
+		Plugins:      []core.PluginConfig{},
 	}
 
 	// Create framework
@@ -284,13 +291,17 @@ func testScenario(t *testing.T, scenario TestScenario) {
 	})
 	framework.LoadPlugin(responder)
 
-	// Add AI agent (optional, will fail without API key but tests structure)
-	agent := agents.NewAIAgent("test-ai")
-	agent.Configure(map[string]interface{}{
-		"api_key": "test-key",
-		"model":   "gpt-3.5-turbo",
-	})
-	framework.LoadPlugin(agent)
+	// Add AI agent (skip if no valid API key available)
+	if apiKey := os.Getenv("OPENAI_API_KEY"); apiKey != "" {
+		agent := agents.NewAIAgent("test-ai")
+		agent.Configure(map[string]interface{}{
+			"api_key": apiKey,
+			"model":   "gpt-3.5-turbo",
+		})
+		framework.LoadPlugin(agent)
+	} else {
+		t.Log("Skipping AI agent - no OPENAI_API_KEY environment variable set")
+	}
 
 	// Start framework
 	ctx, cancel := context.WithTimeout(context.Background(), scenario.Duration+10*time.Second)
@@ -338,12 +349,10 @@ func TestEndToEndWithRealPrometheus(t *testing.T) {
 
 	// Create framework with real Prometheus
 	cfg := &core.FrameworkConfig{
-		Logging: core.LoggingConfig{
-			Level:  "info",
-			Format: "text",
-			Output: "stdout",
-		},
-		Plugins: []core.PluginConfig{},
+		LogLevel:  "info",
+		LogFormat: "text",
+		LogOutput: "stdout",
+		Plugins:   []core.PluginConfig{},
 	}
 
 	framework := core.NewFramework(cfg)
@@ -395,29 +404,26 @@ func TestEndToEndWithRealPrometheus(t *testing.T) {
 func TestEndToEndConfigurationLoading(t *testing.T) {
 	// Create a test configuration file
 	testConfig := `
-logging:
-  level: debug
-  format: json
-  output: stdout
-
-agent:
-  default_agent: "test-ai"
+log_level: debug
+log_format: json
+log_output: stdout
+default_agent: "test-ai"
 
 plugins:
   - name: "test-collector"
-    type: "prometheus"
+    type: "collector"
     config:
       url: "http://localhost:9091"
       interval: "5s"
       queries: ["up", "cpu_usage_percent"]
   
   - name: "test-analyzer"
-    type: "anomaly"
+    type: "analyzer"
     config:
       threshold: 2.0
   
   - name: "test-responder"
-    type: "logger"
+    type: "responder"
     config:
       level: "info"
 `
@@ -437,12 +443,12 @@ plugins:
 	}
 
 	// Verify configuration
-	if cfg.Logging.Level != "debug" {
-		t.Errorf("Expected log level 'debug', got %s", cfg.Logging.Level)
+	if cfg.LogLevel != "debug" {
+		t.Errorf("Expected log level 'debug', got %s", cfg.LogLevel)
 	}
 
-	if cfg.Logging.Format != "json" {
-		t.Errorf("Expected log format 'json', got %s", cfg.Logging.Format)
+	if cfg.LogFormat != "json" {
+		t.Errorf("Expected log format 'json', got %s", cfg.LogFormat)
 	}
 
 	if len(cfg.Plugins) != 3 {
@@ -461,12 +467,10 @@ func TestEndToEndPerformance(t *testing.T) {
 
 	// Create framework with multiple analyzers
 	cfg := &core.FrameworkConfig{
-		Logging: core.LoggingConfig{
-			Level:  "warn", // Reduce logging for performance
-			Format: "text",
-			Output: "stdout",
-		},
-		Plugins: []core.PluginConfig{},
+		LogLevel:  "warn", // Reduce logging for performance
+		LogFormat: "text",
+		LogOutput: "stdout",
+		Plugins:   []core.PluginConfig{},
 	}
 
 	framework := core.NewFramework(cfg)

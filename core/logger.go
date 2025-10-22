@@ -7,43 +7,48 @@ import (
 )
 
 // InitLogger initializes the default slog logger with configuration
-func InitLogger(config LoggingConfig) {
+func InitLogger(config *FrameworkConfig) {
 	// Set defaults
-	if config.Level == "" {
-		config.Level = "info"
+	logLevel := config.LogLevel
+	if logLevel == "" {
+		logLevel = "info"
 	}
-	if config.Format == "" {
-		config.Format = "text"
+
+	logFormat := config.LogFormat
+	if logFormat == "" {
+		logFormat = "text"
 	}
-	if config.Output == "" {
-		config.Output = "stdout"
+
+	logOutput := config.LogOutput
+	if logOutput == "" {
+		logOutput = "stdout"
 	}
 
 	// Parse log level
-	var logLevel slog.Level
-	switch config.Level {
+	var slogLevel slog.Level
+	switch logLevel {
 	case "debug":
-		logLevel = slog.LevelDebug
+		slogLevel = slog.LevelDebug
 	case "info":
-		logLevel = slog.LevelInfo
+		slogLevel = slog.LevelInfo
 	case "warn", "warning":
-		logLevel = slog.LevelWarn
+		slogLevel = slog.LevelWarn
 	case "error":
-		logLevel = slog.LevelError
+		slogLevel = slog.LevelError
 	default:
-		logLevel = slog.LevelInfo
+		slogLevel = slog.LevelInfo
 	}
 
 	// Determine output destination
 	var output io.Writer
-	switch config.Output {
+	switch logOutput {
 	case "stdout":
 		output = os.Stdout
 	case "stderr":
 		output = os.Stderr
 	default:
 		// Assume it's a file path
-		file, err := os.OpenFile(config.Output, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		file, err := os.OpenFile(logOutput, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 		if err != nil {
 			// Fallback to stdout if file can't be opened
 			output = os.Stdout
@@ -55,10 +60,10 @@ func InitLogger(config LoggingConfig) {
 	// Create handler based on format
 	var handler slog.Handler
 	opts := &slog.HandlerOptions{
-		Level: logLevel,
+		Level: slogLevel,
 	}
 
-	switch config.Format {
+	switch logFormat {
 	case "json":
 		handler = slog.NewJSONHandler(output, opts)
 	default:

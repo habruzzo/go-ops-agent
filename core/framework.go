@@ -4,108 +4,149 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"sync"
 	"time"
 )
 
 // Framework manages all plugins and orchestrates their interactions
 type Framework struct {
-	plugins     map[string]Plugin
-	collectors  []DataCollector
-	analyzers   []DataAnalyzer
-	responders  []DataResponder
-	agents      []AgentPlugin
-	config      *FrameworkConfig
-	running     bool
-	mu          sync.RWMutex
-	dataChannel chan []DataPoint
-	wg          sync.WaitGroup
-	shutdown    bool
-	ctx         context.Context
-	cancel      context.CancelFunc
+	registry         PluginRegistry
+	factory          PluginFactory
+	configManager    ConfigurationManager
+	healthChecker    HealthChecker
+	metricsCollector MetricsCollector
+	eventBus         EventBus
+	config           *FrameworkConfig
+	running          bool
+	mu               sync.RWMutex
+	dataChannel      chan []DataPoint
+	wg               sync.WaitGroup
+	shutdown         bool
+	ctx              context.Context
+	cancel           context.CancelFunc
+	startTime        time.Time
 }
 
-// NewFramework creates a new framework instance
+// NewFramework creates a new framework instance with default dependencies
 func NewFramework(config *FrameworkConfig) *Framework {
 	// Initialize global logger with configuration
-	InitLogger(config.Logging)
+	InitLogger(config)
 
-	return &Framework{
-		plugins:     make(map[string]Plugin),
-		collectors:  make([]DataCollector, 0),
-		analyzers:   make([]DataAnalyzer, 0),
-		responders:  make([]DataResponder, 0),
-		agents:      make([]AgentPlugin, 0),
+	// Create default dependencies
+	registry := NewDefaultPluginRegistry()
+	factory := NewDefaultPluginFactory()
+
+	framework := &Framework{
+		registry:    registry,
+		factory:     factory,
 		config:      config,
 		running:     false,
-		dataChannel: make(chan []DataPoint, 100),
-		wg:          sync.WaitGroup{}, // Initialize WaitGroup for graceful shutdown
+		dataChannel: make(chan []DataPoint, config.DataChannelSize),
+		wg:          sync.WaitGroup{},
+	}
+
+	// Create health checker with framework reference
+	healthChecker := NewFrameworkHealthChecker(framework, config.HealthCheckTimeout)
+	framework.healthChecker = healthChecker
+
+	return framework
+}
+
+// NewFrameworkWithDependencies creates a new framework instance with custom dependencies
+func NewFrameworkWithDependencies(
+	config *FrameworkConfig,
+	registry PluginRegistry,
+	factory PluginFactory,
+	configManager ConfigurationManager,
+	healthChecker HealthChecker,
+	metricsCollector MetricsCollector,
+	eventBus EventBus,
+) *Framework {
+	// Initialize global logger with configuration
+	InitLogger(config)
+
+	return &Framework{
+		registry:         registry,
+		factory:          factory,
+		configManager:    configManager,
+		healthChecker:    healthChecker,
+		metricsCollector: metricsCollector,
+		eventBus:         eventBus,
+		config:           config,
+		running:          false,
+		dataChannel:      make(chan []DataPoint, config.DataChannelSize),
+		wg:               sync.WaitGroup{},
 	}
 }
 
 // LoadPlugin loads a plugin into the framework
 func (f *Framework) LoadPlugin(plugin Plugin) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	if _, exists := f.plugins[plugin.Name()]; exists {
-		return fmt.Errorf("plugin %s already loaded", plugin.Name())
+	if err := f.registry.RegisterPlugin(plugin); err != nil {
+		return WrapError(err, ErrorTypePlugin, "framework", "load", "failed to register plugin")
 	}
 
-	f.plugins[plugin.Name()] = plugin
-
-	// Add to appropriate category
-	switch plugin.Type() {
-	case PluginTypeCollector:
-		if collector, ok := plugin.(DataCollector); ok {
-			f.collectors = append(f.collectors, collector)
+	// Publish plugin loaded event
+	if f.eventBus != nil {
+		event := Event{
+			Type:      "plugin_loaded",
+			Source:    "framework",
+			Timestamp: time.Now(),
+			Data: map[string]interface{}{
+				"plugin_name": plugin.Name(),
+				"plugin_type": plugin.Type(),
+			},
 		}
-	case PluginTypeAnalyzer:
-		if analyzer, ok := plugin.(DataAnalyzer); ok {
-			f.analyzers = append(f.analyzers, analyzer)
-		}
-	case PluginTypeResponder:
-		if responder, ok := plugin.(DataResponder); ok {
-			f.responders = append(f.responders, responder)
-		}
-	case PluginTypeAgent:
-		if agent, ok := plugin.(AgentPlugin); ok {
-			f.agents = append(f.agents, agent)
-		}
+		f.eventBus.Publish(event)
 	}
 
 	slog.Info("Plugin loaded", "plugin", plugin.Name(), "type", plugin.Type())
 	return nil
 }
 
+// LoadPluginFromConfig loads a plugin from configuration
+func (f *Framework) LoadPluginFromConfig(config PluginConfig) error {
+	plugin, err := f.factory.CreatePlugin(config)
+	if err != nil {
+		return WrapError(err, ErrorTypePlugin, "framework", "load", "failed to create plugin from config")
+	}
+
+	return f.LoadPlugin(plugin)
+}
+
 // UnloadPlugin removes a plugin from the framework
 func (f *Framework) UnloadPlugin(name string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	plugin, exists := f.plugins[name]
-	if !exists {
-		return fmt.Errorf("plugin %s not found", name)
+	plugin, err := f.registry.GetPlugin(name)
+	if err != nil {
+		return WrapError(err, ErrorTypePlugin, "framework", "unload", "plugin not found")
 	}
 
 	// Stop the plugin if it's running
 	if plugin.Status() == PluginStatusRunning {
-		plugin.Stop()
+		if err := plugin.Stop(); err != nil {
+			slog.Error("Failed to stop plugin during unload", "plugin", name, "error", err)
+		}
 	}
 
-	// Remove from appropriate category
-	switch plugin.Type() {
-	case PluginTypeCollector:
-		f.removeCollector(name)
-	case PluginTypeAnalyzer:
-		f.removeAnalyzer(name)
-	case PluginTypeResponder:
-		f.removeResponder(name)
-	case PluginTypeAgent:
-		f.removeAgent(name)
+	// Unregister from registry
+	if err := f.registry.UnregisterPlugin(name); err != nil {
+		return WrapError(err, ErrorTypePlugin, "framework", "unload", "failed to unregister plugin")
 	}
 
-	delete(f.plugins, name)
+	// Publish plugin unloaded event
+	if f.eventBus != nil {
+		event := Event{
+			Type:      "plugin_unloaded",
+			Source:    "framework",
+			Timestamp: time.Now(),
+			Data: map[string]interface{}{
+				"plugin_name": name,
+				"plugin_type": plugin.Type(),
+			},
+		}
+		f.eventBus.Publish(event)
+	}
+
 	slog.Info("Plugin unloaded", "plugin", name)
 	return nil
 }
@@ -116,32 +157,54 @@ func (f *Framework) Start(ctx context.Context) error {
 	defer f.mu.Unlock()
 
 	if f.running {
-		return fmt.Errorf("framework is already running")
+		return NewInternalError("framework", "start", "framework is already running")
 	}
 
 	f.running = true
+	f.startTime = time.Now()
 	f.ctx, f.cancel = context.WithCancel(ctx)
 	slog.Info("Starting framework...")
 
 	// Start all plugins
-	for _, plugin := range f.plugins {
+	plugins := f.registry.ListPlugins()
+	for _, plugin := range plugins {
 		if err := plugin.Start(f.ctx); err != nil {
 			slog.Error("Failed to start plugin", "plugin", plugin.Name(), "error", err)
 			continue
 		}
 	}
 
-	// Start data collection workers
-	for _, collector := range f.collectors {
-		f.wg.Add(1)
-		go f.collectorWorker(f.ctx, collector)
+	// Start data collection workers for collectors
+	collectors := f.registry.ListPluginsByType(PluginTypeCollector)
+	for _, plugin := range collectors {
+		if collector, ok := plugin.(DataCollector); ok {
+			f.wg.Add(1)
+			go f.collectorWorker(f.ctx, collector)
+		}
 	}
 
 	// Start data processing worker
 	f.wg.Add(1)
 	go f.dataProcessor(f.ctx)
 
-	slog.Info("Framework started successfully")
+	// Start health endpoints
+	f.wg.Add(1)
+	go f.startHealthEndpoints(f.ctx)
+
+	// Publish framework started event
+	if f.eventBus != nil {
+		event := Event{
+			Type:      "framework_started",
+			Source:    "framework",
+			Timestamp: time.Now(),
+			Data: map[string]interface{}{
+				"plugin_count": len(plugins),
+			},
+		}
+		f.eventBus.Publish(event)
+	}
+
+	slog.Info("Framework started successfully", "plugin_count", len(plugins))
 	return nil
 }
 
@@ -151,7 +214,7 @@ func (f *Framework) Stop() error {
 	defer f.mu.Unlock()
 
 	if !f.running {
-		return fmt.Errorf("framework is not running")
+		return NewInternalError("framework", "stop", "framework is not running")
 	}
 
 	f.running = false
@@ -179,10 +242,24 @@ func (f *Framework) Stop() error {
 	}
 
 	// Stop all plugins
-	for _, plugin := range f.plugins {
+	plugins := f.registry.ListPlugins()
+	for _, plugin := range plugins {
 		if err := plugin.Stop(); err != nil {
 			slog.Error("Failed to stop plugin", "plugin", plugin.Name(), "error", err)
 		}
+	}
+
+	// Publish framework stopped event
+	if f.eventBus != nil {
+		event := Event{
+			Type:      "framework_stopped",
+			Source:    "framework",
+			Timestamp: time.Now(),
+			Data: map[string]interface{}{
+				"uptime": time.Since(f.startTime),
+			},
+		}
+		f.eventBus.Publish(event)
 	}
 
 	slog.Info("Framework stopped")
@@ -194,14 +271,14 @@ func (f *Framework) QueryAgent(ctx context.Context, agentName, query string) (*A
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
-	agent, exists := f.plugins[agentName]
-	if !exists {
-		return nil, fmt.Errorf("agent %s not found", agentName)
+	plugin, err := f.registry.GetPlugin(agentName)
+	if err != nil {
+		return nil, NewPluginError("framework", "query", fmt.Sprintf("agent %s not found", agentName))
 	}
 
-	agentPlugin, ok := agent.(AgentPlugin)
+	agentPlugin, ok := plugin.(AgentPlugin)
 	if !ok {
-		return nil, fmt.Errorf("plugin %s is not an agent", agentName)
+		return nil, NewPluginError("framework", "query", fmt.Sprintf("plugin %s is not an agent", agentName))
 	}
 
 	return agentPlugin.ProcessQuery(ctx, query)
@@ -209,11 +286,11 @@ func (f *Framework) QueryAgent(ctx context.Context, agentName, query string) (*A
 
 // QueryDefaultAgent processes a query through the default agent
 func (f *Framework) QueryDefaultAgent(ctx context.Context, query string) (*AgentResponse, error) {
-	if f.config.Agent.DefaultAgent == "" {
-		return nil, fmt.Errorf("no default agent configured")
+	if f.config.DefaultAgent == "" {
+		return nil, NewConfigurationError("framework", "query", "no default agent configured")
 	}
 
-	return f.QueryAgent(ctx, f.config.Agent.DefaultAgent, query)
+	return f.QueryAgent(ctx, f.config.DefaultAgent, query)
 }
 
 // GetDataChannel returns the data channel for testing purposes
@@ -226,22 +303,44 @@ func (f *Framework) GetStatus() map[string]interface{} {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
+	plugins := f.registry.ListPlugins()
 	pluginStatus := make(map[string]interface{})
-	for name, plugin := range f.plugins {
-		pluginStatus[name] = map[string]interface{}{
+
+	for _, plugin := range plugins {
+		pluginStatus[plugin.Name()] = map[string]interface{}{
 			"type":   plugin.Type(),
 			"status": plugin.Status(),
 		}
 	}
 
-	return map[string]interface{}{
+	status := map[string]interface{}{
 		"running":       f.running,
-		"total_plugins": len(f.plugins),
-		"collectors":    len(f.collectors),
-		"analyzers":     len(f.analyzers),
-		"responders":    len(f.responders),
-		"agents":        len(f.agents),
+		"total_plugins": len(plugins),
+		"collectors":    f.registry.GetPluginCountByType(PluginTypeCollector),
+		"analyzers":     f.registry.GetPluginCountByType(PluginTypeAnalyzer),
+		"responders":    f.registry.GetPluginCountByType(PluginTypeResponder),
+		"agents":        f.registry.GetPluginCountByType(PluginTypeAgent),
 		"plugins":       pluginStatus,
+	}
+
+	if f.startTime != (time.Time{}) {
+		status["uptime"] = time.Since(f.startTime)
+	}
+
+	return status
+}
+
+// GetHealthStatus returns the health status of the framework
+func (f *Framework) GetHealthStatus(ctx context.Context) HealthStatus {
+	if f.healthChecker != nil {
+		return f.healthChecker.CheckHealth(ctx)
+	}
+
+	// Fallback health check
+	return HealthStatus{
+		Status:    "healthy",
+		Message:   "Framework is running",
+		Timestamp: time.Now(),
 	}
 }
 
@@ -314,12 +413,21 @@ func (f *Framework) dataProcessor(ctx context.Context) {
 // processData runs data through analyzers and triggers responders
 func (f *Framework) processData(ctx context.Context, data []DataPoint) {
 	// Update agent context
-	for _, agent := range f.agents {
-		agent.SetContext(data)
+	agents := f.registry.ListPluginsByType(PluginTypeAgent)
+	for _, plugin := range agents {
+		if agent, ok := plugin.(AgentPlugin); ok {
+			agent.SetContext(data)
+		}
 	}
 
 	// Run analyzers
-	for _, analyzer := range f.analyzers {
+	analyzers := f.registry.ListPluginsByType(PluginTypeAnalyzer)
+	for _, plugin := range analyzers {
+		analyzer, ok := plugin.(DataAnalyzer)
+		if !ok {
+			continue
+		}
+
 		if !analyzer.CanAnalyze(data) {
 			continue
 		}
@@ -335,7 +443,13 @@ func (f *Framework) processData(ctx context.Context, data []DataPoint) {
 		}
 
 		// Trigger responders
-		for _, responder := range f.responders {
+		responders := f.registry.ListPluginsByType(PluginTypeResponder)
+		for _, plugin := range responders {
+			responder, ok := plugin.(DataResponder)
+			if !ok {
+				continue
+			}
+
 			if !responder.CanHandle(analysis) {
 				continue
 			}
@@ -347,39 +461,124 @@ func (f *Framework) processData(ctx context.Context, data []DataPoint) {
 	}
 }
 
-// Helper methods to remove plugins from categories
-func (f *Framework) removeCollector(name string) {
-	for i, collector := range f.collectors {
-		if collector.Name() == name {
-			f.collectors = append(f.collectors[:i], f.collectors[i+1:]...)
-			break
-		}
-	}
+// GetRegistry returns the plugin registry
+func (f *Framework) GetRegistry() PluginRegistry {
+	return f.registry
 }
 
-func (f *Framework) removeAnalyzer(name string) {
-	for i, analyzer := range f.analyzers {
-		if analyzer.Name() == name {
-			f.analyzers = append(f.analyzers[:i], f.analyzers[i+1:]...)
-			break
-		}
-	}
+// GetFactory returns the plugin factory
+func (f *Framework) GetFactory() PluginFactory {
+	return f.factory
 }
 
-func (f *Framework) removeResponder(name string) {
-	for i, responder := range f.responders {
-		if responder.Name() == name {
-			f.responders = append(f.responders[:i], f.responders[i+1:]...)
-			break
-		}
-	}
+// GetHealthChecker returns the health checker
+func (f *Framework) GetHealthChecker() HealthChecker {
+	return f.healthChecker
 }
 
-func (f *Framework) removeAgent(name string) {
-	for i, agent := range f.agents {
-		if agent.Name() == name {
-			f.agents = append(f.agents[:i], f.agents[i+1:]...)
-			break
+// startHealthEndpoints starts HTTP health check endpoints
+func (f *Framework) startHealthEndpoints(ctx context.Context) {
+	defer f.wg.Done()
+
+	mux := http.NewServeMux()
+
+	// Health check endpoint
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.RLock()
+		running := f.running && !f.shutdown
+		f.mu.RUnlock()
+
+		if running {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("OK"))
+		} else {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte("Service Unavailable"))
 		}
+	})
+
+	// Readiness check endpoint
+	mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.RLock()
+		running := f.running && !f.shutdown
+		pluginCount := f.registry.GetPluginCount()
+		f.mu.RUnlock()
+
+		if running && pluginCount > 0 {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("Ready"))
+		} else {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte("Not Ready"))
+		}
+	})
+
+	// Metrics endpoint (basic)
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.RLock()
+		status := f.GetStatus()
+		f.mu.RUnlock()
+
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+
+		fmt.Fprintf(w, "# Agent Framework Metrics\n")
+		fmt.Fprintf(w, "framework_running %t\n", status["running"])
+		fmt.Fprintf(w, "framework_total_plugins %d\n", status["total_plugins"])
+		fmt.Fprintf(w, "framework_collectors %d\n", status["collectors"])
+		fmt.Fprintf(w, "framework_analyzers %d\n", status["analyzers"])
+		fmt.Fprintf(w, "framework_responders %d\n", status["responders"])
+		fmt.Fprintf(w, "framework_agents %d\n", status["agents"])
+	})
+
+	// Status endpoint (JSON)
+	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+		f.mu.RLock()
+		status := f.GetStatus()
+		f.mu.RUnlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+
+		// Simple JSON response
+		fmt.Fprintf(w, `{
+			"running": %t,
+			"total_plugins": %d,
+			"collectors": %d,
+			"analyzers": %d,
+			"responders": %d,
+			"agents": %d,
+			"uptime": "%v"
+		}`,
+			status["running"],
+			status["total_plugins"],
+			status["collectors"],
+			status["analyzers"],
+			status["responders"],
+			status["agents"],
+			status["uptime"])
+	})
+
+	server := &http.Server{
+		Addr:    fmt.Sprintf("%s:%d", f.config.ServerHost, f.config.ServerPort),
+		Handler: mux,
+	}
+
+	// Start server in goroutine
+	go func() {
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error("Health endpoints server error", "error", err)
+		}
+	}()
+
+	// Wait for context cancellation
+	<-ctx.Done()
+
+	// Shutdown server
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		slog.Error("Failed to shutdown health endpoints server", "error", err)
 	}
 }

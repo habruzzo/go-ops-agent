@@ -6,14 +6,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
-	"github.com/holden/agent/core"
-	"github.com/holden/agent/plugins/agents"
-	"github.com/holden/agent/plugins/analyzers"
-	"github.com/holden/agent/plugins/collectors"
-	"github.com/holden/agent/plugins/responders"
+	"github.com/habruzzo/agent/core"
+	"github.com/habruzzo/agent/plugins/agents"
+	"github.com/habruzzo/agent/plugins/analyzers"
+	"github.com/habruzzo/agent/plugins/collectors"
+	"github.com/habruzzo/agent/plugins/responders"
 )
 
 // TestMicroserviceEndToEnd tests the framework with a real microservice
@@ -27,15 +28,11 @@ func TestMicroserviceEndToEnd(t *testing.T) {
 
 	// Create framework configuration
 	cfg := &core.FrameworkConfig{
-		Logging: core.LoggingConfig{
-			Level:  "info",
-			Format: "text",
-			Output: "stdout",
-		},
-		Agent: core.AgentConfig{
-			DefaultAgent: "test-ai",
-		},
-		Plugins: []core.PluginConfig{},
+		LogLevel:     "info",
+		LogFormat:    "text",
+		LogOutput:    "stdout",
+		DefaultAgent: "test-ai",
+		Plugins:      []core.PluginConfig{},
 	}
 
 	// Create framework
@@ -71,14 +68,18 @@ func TestMicroserviceEndToEnd(t *testing.T) {
 	})
 	framework.LoadPlugin(responder)
 
-	// Add AI agent
-	agent := agents.NewAIAgent("microservice-ai")
-	agent.Configure(map[string]interface{}{
-		"api_key":    "test-key",
-		"model":      "gpt-3.5-turbo",
-		"max_tokens": 150,
-	})
-	framework.LoadPlugin(agent)
+	// Add AI agent (skip if no valid API key available)
+	if apiKey := os.Getenv("OPENAI_API_KEY"); apiKey != "" {
+		agent := agents.NewAIAgent("microservice-ai")
+		agent.Configure(map[string]interface{}{
+			"api_key":    apiKey,
+			"model":      "gpt-3.5-turbo",
+			"max_tokens": 150,
+		})
+		framework.LoadPlugin(agent)
+	} else {
+		t.Log("Skipping AI agent - no OPENAI_API_KEY environment variable set")
+	}
 
 	// Start framework
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -119,12 +120,10 @@ func TestMicroserviceWithAnomalies(t *testing.T) {
 
 	// Create framework
 	cfg := &core.FrameworkConfig{
-		Logging: core.LoggingConfig{
-			Level:  "info",
-			Format: "text",
-			Output: "stdout",
-		},
-		Plugins: []core.PluginConfig{},
+		LogLevel:  "info",
+		LogFormat: "text",
+		LogOutput: "stdout",
+		Plugins:   []core.PluginConfig{},
 	}
 
 	framework := core.NewFramework(cfg)
@@ -214,12 +213,10 @@ func TestMicroservicePerformance(t *testing.T) {
 
 	// Create framework with multiple analyzers
 	cfg := &core.FrameworkConfig{
-		Logging: core.LoggingConfig{
-			Level:  "warn", // Reduce logging for performance
-			Format: "text",
-			Output: "stdout",
-		},
-		Plugins: []core.PluginConfig{},
+		LogLevel:  "warn", // Reduce logging for performance
+		LogFormat: "text",
+		LogOutput: "stdout",
+		Plugins:   []core.PluginConfig{},
 	}
 
 	framework := core.NewFramework(cfg)
@@ -296,10 +293,10 @@ func isMicroserviceRunning() bool {
 
 func generateMicroserviceLoad() {
 	client := &http.Client{Timeout: 5 * time.Second}
-	
+
 	// Generate load for 60 seconds
 	endTime := time.Now().Add(60 * time.Second)
-	
+
 	for time.Now().Before(endTime) {
 		// Make requests to different endpoints
 		endpoints := []string{
@@ -307,71 +304,71 @@ func generateMicroserviceLoad() {
 			"http://localhost:8080/api/products",
 			"http://localhost:8080/api/orders",
 		}
-		
+
 		for _, endpoint := range endpoints {
 			resp, err := client.Get(endpoint)
 			if err == nil {
 				resp.Body.Close()
 			}
-			
+
 			// Small delay between requests
 			time.Sleep(100 * time.Millisecond)
 		}
-		
+
 		// Occasionally create an order
 		if time.Now().Unix()%5 == 0 {
 			orderData := `{"product_id": 123, "quantity": 2, "price": 29.99}`
-			resp, err := client.Post("http://localhost:8080/api/orders", 
+			resp, err := client.Post("http://localhost:8080/api/orders",
 				"application/json", bytes.NewBufferString(orderData))
 			if err == nil {
 				resp.Body.Close()
 			}
 		}
-		
+
 		time.Sleep(500 * time.Millisecond)
 	}
 }
 
 func enableMicroserviceAnomalyMode(enable bool) error {
 	client := &http.Client{Timeout: 5 * time.Second}
-	
+
 	url := "http://localhost:8080/admin/anomaly"
 	resp, err := client.Post(url, "application/json", nil)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("failed to toggle anomaly mode: %s", string(body))
 	}
-	
+
 	return nil
 }
 
 func getMicroserviceStatus() (map[string]interface{}, error) {
 	client := &http.Client{Timeout: 5 * time.Second}
-	
+
 	resp, err := client.Get("http://localhost:8080/admin/status")
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("failed to get status: %d", resp.StatusCode)
 	}
-	
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Simple parsing (in a real test, you'd use JSON unmarshaling)
 	status := map[string]interface{}{
 		"response": string(body),
 	}
-	
+
 	return status, nil
 }

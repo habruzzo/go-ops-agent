@@ -9,12 +9,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/holden/agent/config"
-	"github.com/holden/agent/core"
-	"github.com/holden/agent/plugins/agents"
-	"github.com/holden/agent/plugins/analyzers"
-	"github.com/holden/agent/plugins/collectors"
-	"github.com/holden/agent/plugins/responders"
+	"github.com/habruzzo/agent/config"
+	"github.com/habruzzo/agent/core"
+	"github.com/habruzzo/agent/plugins/agents"
+	"github.com/habruzzo/agent/plugins/analyzers"
+	"github.com/habruzzo/agent/plugins/collectors"
+	"github.com/habruzzo/agent/plugins/responders"
 )
 
 func main() {

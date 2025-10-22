@@ -1,6 +1,6 @@
-module github.com/holden/agent/test/microservice
+module github.com/habruzzo/agent/test/microservice
 
-go 1.21
+go 1.24.0
 
 require github.com/prometheus/client_golang v1.17.0
 

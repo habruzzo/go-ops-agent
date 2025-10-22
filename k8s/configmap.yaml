@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-config
+  namespace: agent-framework
+data:
+  framework.yaml: |
+    logging:
+      level: info
+      format: json
+      output: stdout
+    
+    plugins:
+      - name: prometheus-collector
+        type: prometheus
+        enabled: true
+        config:
+          endpoint: "http://prometheus:9090"
+          interval: "30s"
+          timeout: "10s"
+      
+      - name: anomaly-analyzer
+        type: anomaly
+        enabled: true
+        config:
+          threshold: 2.0
+          window_size: 100
+          sensitivity: 0.8
+      
+      - name: logger-responder
+        type: log
+        enabled: true
+        config:
+          level: info
+          format: json
+      
+      - name: ai-agent
+        type: ai
+        enabled: true
+        config:
+          model: "claude-3-sonnet-20240229"
+          max_tokens: 1000
+          temperature: 0.7
+          timeout: "30s"
+

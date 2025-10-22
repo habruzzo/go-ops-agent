@@ -4,41 +4,32 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestFramework_NewFramework(t *testing.T) {
 	config := &FrameworkConfig{
-		Logging: LoggingConfig{
-			Level:  "debug",
-			Format: "text",
-			Output: "stdout",
-		},
-		Plugins: []PluginConfig{},
+		LogLevel:  "debug",
+		LogFormat: "text",
+		LogOutput: "stdout",
+		Plugins:   []PluginConfig{},
 	}
 
 	framework := NewFramework(config)
 
-	if framework == nil {
-		t.Fatal("Expected framework to be created")
-	}
-
-	if framework.running {
-		t.Error("Expected framework to not be running initially")
-	}
-
-	if len(framework.plugins) != 0 {
-		t.Error("Expected no plugins initially")
-	}
+	require.NotNil(t, framework, "Expected framework to be created")
+	assert.False(t, framework.running, "Expected framework to not be running initially")
+	assert.Equal(t, 0, framework.registry.GetPluginCount(), "Expected no plugins initially")
 }
 
 func TestFramework_LoadPlugin(t *testing.T) {
 	config := &FrameworkConfig{
-		Logging: LoggingConfig{
-			Level:  "info",
-			Format: "text",
-			Output: "stdout",
-		},
-		Plugins: []PluginConfig{},
+		LogLevel:  "info",
+		LogFormat: "text",
+		LogOutput: "stdout",
+		Plugins:   []PluginConfig{},
 	}
 
 	framework := NewFramework(config)
@@ -51,27 +42,21 @@ func TestFramework_LoadPlugin(t *testing.T) {
 	}
 
 	err := framework.LoadPlugin(mockPlugin)
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
+	require.NoError(t, err, "Expected no error when loading plugin")
 
-	if len(framework.plugins) != 1 {
-		t.Errorf("Expected 1 plugin, got %d", len(framework.plugins))
-	}
+	assert.Equal(t, 1, framework.registry.GetPluginCount(), "Expected 1 plugin after loading")
 
-	if framework.plugins["test-plugin"] == nil {
-		t.Error("Expected plugin to be loaded")
-	}
+	plugin, err := framework.registry.GetPlugin("test-plugin")
+	require.NoError(t, err, "Expected no error when getting plugin")
+	require.NotNil(t, plugin, "Expected plugin to be loaded")
 }
 
 func TestFramework_StartStop(t *testing.T) {
 	config := &FrameworkConfig{
-		Logging: LoggingConfig{
-			Level:  "info",
-			Format: "text",
-			Output: "stdout",
-		},
-		Plugins: []PluginConfig{},
+		LogLevel:  "info",
+		LogFormat: "text",
+		LogOutput: "stdout",
+		Plugins:   []PluginConfig{},
 	}
 
 	framework := NewFramework(config)
@@ -87,45 +72,32 @@ func TestFramework_StartStop(t *testing.T) {
 	}
 
 	err := framework.LoadPlugin(mockCollector)
-	if err != nil {
-		t.Fatalf("Failed to load plugin: %v", err)
-	}
+	require.NoError(t, err, "Failed to load plugin")
 
 	// Start framework
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	err = framework.Start(ctx)
-	if err != nil {
-		t.Fatalf("Failed to start framework: %v", err)
-	}
-
-	if !framework.running {
-		t.Error("Expected framework to be running")
-	}
+	require.NoError(t, err, "Failed to start framework")
+	assert.True(t, framework.running, "Expected framework to be running")
 
 	// Wait a bit to let workers run
 	time.Sleep(500 * time.Millisecond)
 
 	// Stop framework
 	err = framework.Stop()
-	if err != nil {
-		t.Fatalf("Failed to stop framework: %v", err)
-	}
+	require.NoError(t, err, "Failed to stop framework")
 
-	if framework.running {
-		t.Error("Expected framework to be stopped")
-	}
+	assert.False(t, framework.running, "Expected framework to be stopped")
 }
 
 func TestFramework_GetStatus(t *testing.T) {
 	config := &FrameworkConfig{
-		Logging: LoggingConfig{
-			Level:  "info",
-			Format: "text",
-			Output: "stdout",
-		},
-		Plugins: []PluginConfig{},
+		LogLevel:  "info",
+		LogFormat: "text",
+		LogOutput: "stdout",
+		Plugins:   []PluginConfig{},
 	}
 
 	framework := NewFramework(config)
@@ -150,21 +122,10 @@ func TestFramework_GetStatus(t *testing.T) {
 
 	status := framework.GetStatus()
 
-	if status["running"] != false {
-		t.Error("Expected framework to not be running")
-	}
-
-	if status["total_plugins"] != 2 {
-		t.Errorf("Expected 2 plugins, got %v", status["total_plugins"])
-	}
-
-	if status["collectors"] != 1 {
-		t.Errorf("Expected 1 collector, got %v", status["collectors"])
-	}
-
-	if status["analyzers"] != 1 {
-		t.Errorf("Expected 1 analyzer, got %v", status["analyzers"])
-	}
+	assert.Equal(t, false, status["running"], "Expected framework to not be running")
+	assert.Equal(t, 2, status["total_plugins"], "Expected 2 plugins")
+	assert.Equal(t, 1, status["collectors"], "Expected 1 collector")
+	assert.Equal(t, 1, status["analyzers"], "Expected 1 analyzer")
 }
 
 // Mock implementations for testing

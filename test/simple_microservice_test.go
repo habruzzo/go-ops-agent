@@ -2,14 +2,13 @@ package test
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"testing"
 	"time"
 
-	"github.com/holden/agent/core"
-	"github.com/holden/agent/plugins/analyzers"
-	"github.com/holden/agent/plugins/responders"
+	"github.com/habruzzo/agent/core"
+	"github.com/habruzzo/agent/plugins/analyzers"
+	"github.com/habruzzo/agent/plugins/responders"
 )
 
 // TestSimpleMicroserviceEndToEnd tests the framework with direct microservice metrics
@@ -23,12 +22,10 @@ func TestSimpleMicroserviceEndToEnd(t *testing.T) {
 
 	// Create framework configuration
 	cfg := &core.FrameworkConfig{
-		Logging: core.LoggingConfig{
-			Level:  "info",
-			Format: "text",
-			Output: "stdout",
-		},
-		Plugins: []core.PluginConfig{},
+		LogLevel:  "info",
+		LogFormat: "text",
+		LogOutput: "stdout",
+		Plugins:   []core.PluginConfig{},
 	}
 
 	// Create framework
@@ -198,53 +195,4 @@ func TestMicroserviceAnomalyMode(t *testing.T) {
 	t.Logf("Final status: %+v", status)
 
 	t.Log("Microservice anomaly mode test completed successfully")
-}
-
-// Helper functions (reused from e2e_microservice_test.go)
-
-func isMicroserviceRunning() bool {
-	resp, err := http.Get("http://localhost:8080/health")
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-	return resp.StatusCode == http.StatusOK
-}
-
-func enableMicroserviceAnomalyMode(enable bool) error {
-	client := &http.Client{Timeout: 5 * time.Second}
-
-	url := "http://localhost:8080/admin/anomaly"
-	resp, err := client.Post(url, "application/json", nil)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to toggle anomaly mode: %d", resp.StatusCode)
-	}
-
-	return nil
-}
-
-func getMicroserviceStatus() (map[string]interface{}, error) {
-	client := &http.Client{Timeout: 5 * time.Second}
-
-	resp, err := client.Get("http://localhost:8080/admin/status")
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to get status: %d", resp.StatusCode)
-	}
-
-	// Simple parsing (in a real test, you'd use JSON unmarshaling)
-	status := map[string]interface{}{
-		"response": "ok",
-	}
-
-	return status, nil
 }

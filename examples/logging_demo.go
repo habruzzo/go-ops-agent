@@ -4,23 +4,21 @@ import (
 	"context"
 	"time"
 
-	"github.com/holden/agent/core"
-	"github.com/holden/agent/plugins/analyzers"
-	"github.com/holden/agent/plugins/collectors"
+	"github.com/habruzzo/agent/core"
+	"github.com/habruzzo/agent/plugins/analyzers"
+	"github.com/habruzzo/agent/plugins/collectors"
 )
 
 func main() {
 	// Create a simple config
 	cfg := &core.FrameworkConfig{
-		Logging: core.LoggingConfig{
-			Level:  "debug",
-			Format: "text",
-			Output: "stdout",
-		},
+		LogLevel:  "debug",
+		LogFormat: "text",
+		LogOutput: "stdout",
 		Plugins: []core.PluginConfig{
 			{
 				Name:    "prometheus",
-				Type:    "prometheus",
+				Type:    "collector",
 				Enabled: true,
 				Config: map[string]interface{}{
 					"url": "http://localhost:9090",
@@ -28,7 +26,7 @@ func main() {
 			},
 			{
 				Name:    "anomaly-detector",
-				Type:    "anomaly",
+				Type:    "analyzer",
 				Enabled: true,
 				Config: map[string]interface{}{
 					"threshold": 2.0,
@@ -42,11 +40,15 @@ func main() {
 
 	// Load plugins
 	prometheus := collectors.NewPrometheusCollector("prometheus")
-	prometheus.Configure(cfg.Plugins[0].Config)
+	if configMap, ok := cfg.Plugins[0].Config.(map[string]interface{}); ok {
+		prometheus.Configure(configMap)
+	}
 	framework.LoadPlugin(prometheus)
 
 	anomaly := analyzers.NewAnomalyAnalyzer("anomaly-detector")
-	anomaly.Configure(cfg.Plugins[1].Config)
+	if configMap, ok := cfg.Plugins[1].Config.(map[string]interface{}); ok {
+		anomaly.Configure(configMap)
+	}
 	framework.LoadPlugin(anomaly)
 
 	// Start framework
