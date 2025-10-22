@@ -325,7 +325,7 @@ Built-in support for distributed tracing with OpenTelemetry (coming soon).
 ### Docker
 
 ```dockerfile
-FROM golang:1.21-alpine AS builder
+FROM golang:1.24-alpine AS builder
 WORKDIR /app
 COPY . .
 RUN go build -o agent ./cli/main.go
