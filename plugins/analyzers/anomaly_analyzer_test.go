@@ -5,23 +5,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/holden/agent/core"
+	"github.com/habruzzo/agent/core"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAnomalyAnalyzer_NewAnomalyAnalyzer(t *testing.T) {
 	analyzer := NewAnomalyAnalyzer("test-analyzer")
 
-	if analyzer.Name() != "test-analyzer" {
-		t.Errorf("Expected name 'test-analyzer', got %s", analyzer.Name())
-	}
-
-	if analyzer.Type() != core.PluginTypeAnalyzer {
-		t.Errorf("Expected type 'analyzer', got %s", analyzer.Type())
-	}
-
-	if analyzer.Version() != "1.0.0" {
-		t.Errorf("Expected version '1.0.0', got %s", analyzer.Version())
-	}
+	assert.Equal(t, "test-analyzer", analyzer.Name(), "Expected correct name")
+	assert.Equal(t, core.PluginTypeAnalyzer, analyzer.Type(), "Expected correct type")
+	assert.Equal(t, "1.0.0", analyzer.Version(), "Expected correct version")
 }
 
 func TestAnomalyAnalyzer_Configure(t *testing.T) {
@@ -32,9 +26,7 @@ func TestAnomalyAnalyzer_Configure(t *testing.T) {
 	}
 
 	err := analyzer.Configure(config)
-	if err != nil {
-		t.Fatalf("Expected no error, got %v", err)
-	}
+	require.NoError(t, err, "Expected no error when configuring with valid config")
 
 	// Test with invalid config
 	invalidConfig := map[string]interface{}{
@@ -42,9 +34,7 @@ func TestAnomalyAnalyzer_Configure(t *testing.T) {
 	}
 
 	err = analyzer.Configure(invalidConfig)
-	if err != nil {
-		t.Fatalf("Expected no error for invalid config, got %v", err)
-	}
+	require.NoError(t, err, "Expected no error for invalid config (should use default)")
 }
 
 func TestAnomalyAnalyzer_StartStop(t *testing.T) {
@@ -54,23 +44,13 @@ func TestAnomalyAnalyzer_StartStop(t *testing.T) {
 
 	// Test start
 	err := analyzer.Start(ctx)
-	if err != nil {
-		t.Fatalf("Failed to start analyzer: %v", err)
-	}
-
-	if analyzer.Status() != core.PluginStatusRunning {
-		t.Errorf("Expected status 'running', got %s", analyzer.Status())
-	}
+	require.NoError(t, err, "Failed to start analyzer")
+	assert.Equal(t, core.PluginStatusRunning, analyzer.Status(), "Expected status 'running'")
 
 	// Test stop
 	err = analyzer.Stop()
-	if err != nil {
-		t.Fatalf("Failed to stop analyzer: %v", err)
-	}
-
-	if analyzer.Status() != core.PluginStatusStopped {
-		t.Errorf("Expected status 'stopped', got %s", analyzer.Status())
-	}
+	require.NoError(t, err, "Failed to stop analyzer")
+	assert.Equal(t, core.PluginStatusStopped, analyzer.Status(), "Expected status 'stopped'")
 }
 
 func TestAnomalyAnalyzer_Analyze(t *testing.T) {

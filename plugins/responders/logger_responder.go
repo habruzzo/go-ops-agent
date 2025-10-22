@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/holden/agent/core"
+	"github.com/habruzzo/agent/core"
 )
 
 // LoggerResponder implements the DataResponder interface for logging

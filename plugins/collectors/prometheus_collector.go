@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/holden/agent/core"
+	"github.com/habruzzo/agent/core"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 )

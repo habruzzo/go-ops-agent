@@ -5,23 +5,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/holden/agent/config"
-	"github.com/holden/agent/core"
-	"github.com/holden/agent/plugins/agents"
-	"github.com/holden/agent/plugins/analyzers"
-	"github.com/holden/agent/plugins/collectors"
-	"github.com/holden/agent/plugins/responders"
+	"github.com/habruzzo/agent/config"
+	"github.com/habruzzo/agent/core"
+	"github.com/habruzzo/agent/plugins/agents"
+	"github.com/habruzzo/agent/plugins/analyzers"
+	"github.com/habruzzo/agent/plugins/collectors"
+	"github.com/habruzzo/agent/plugins/responders"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestFullFrameworkIntegration(t *testing.T) {
 	// Create a test configuration
 	cfg := &core.FrameworkConfig{
-		Logging: core.LoggingConfig{
-			Level:  "info",
-			Format: "text",
-			Output: "stdout",
-		},
-		Plugins: []core.PluginConfig{},
+		LogLevel:  "info",
+		LogFormat: "text",
+		LogOutput: "stdout",
+		Plugins:   []core.PluginConfig{},
 	}
 
 	// Create framework
@@ -92,15 +91,11 @@ func TestFrameworkWithAIAgent(t *testing.T) {
 	}
 
 	cfg := &core.FrameworkConfig{
-		Logging: core.LoggingConfig{
-			Level:  "info",
-			Format: "text",
-			Output: "stdout",
-		},
-		Agent: core.AgentConfig{
-			DefaultAgent: "test-ai",
-		},
-		Plugins: []core.PluginConfig{},
+		LogLevel:     "info",
+		LogFormat:    "text",
+		LogOutput:    "stdout",
+		DefaultAgent: "test-ai",
+		Plugins:      []core.PluginConfig{},
 	}
 
 	framework := core.NewFramework(cfg)
@@ -134,29 +129,20 @@ func TestFrameworkConfigurationLoading(t *testing.T) {
 		t.Fatalf("Failed to load config: %v", err)
 	}
 
-	if cfg.Logging.Level == "" {
-		t.Error("Expected logging level to be set")
-	}
-
-	if len(cfg.Plugins) == 0 {
-		t.Error("Expected plugins to be configured")
-	}
+	assert.NotEmpty(t, cfg.LogLevel, "Expected logging level to be set")
+	assert.NotEmpty(t, cfg.Plugins, "Expected plugins to be configured")
 
 	// Test default configuration
 	defaultCfg := config.DefaultConfig()
-	if defaultCfg.Logging.Level != "info" {
-		t.Errorf("Expected default log level 'info', got %s", defaultCfg.Logging.Level)
-	}
+	assert.Equal(t, "info", defaultCfg.LogLevel, "Expected default log level 'info'")
 }
 
 func TestFrameworkPluginLifecycle(t *testing.T) {
 	cfg := &core.FrameworkConfig{
-		Logging: core.LoggingConfig{
-			Level:  "info",
-			Format: "text",
-			Output: "stdout",
-		},
-		Plugins: []core.PluginConfig{},
+		LogLevel:  "info",
+		LogFormat: "text",
+		LogOutput: "stdout",
+		Plugins:   []core.PluginConfig{},
 	}
 
 	framework := core.NewFramework(cfg)
@@ -182,12 +168,10 @@ func TestFrameworkPluginLifecycle(t *testing.T) {
 
 func TestFrameworkConcurrentAccess(t *testing.T) {
 	cfg := &core.FrameworkConfig{
-		Logging: core.LoggingConfig{
-			Level:  "info",
-			Format: "text",
-			Output: "stdout",
-		},
-		Plugins: []core.PluginConfig{},
+		LogLevel:  "info",
+		LogFormat: "text",
+		LogOutput: "stdout",
+		Plugins:   []core.PluginConfig{},
 	}
 
 	framework := core.NewFramework(cfg)

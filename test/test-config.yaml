@@ -1,14 +1,11 @@
-logging:
-  level: info
-  format: text
-  output: stdout
-
-agent:
-  default_agent: "test-ai"
+log_level: debug
+log_format: json
+log_output: stdout
+default_agent: "test-ai"
 
 plugins:
   - name: "prometheus-collector"
-    type: "prometheus"
+    type: "collector"
     config:
       url: "http://localhost:9090"
       interval: "5s"
@@ -19,17 +16,17 @@ plugins:
         - "response_time_ms"
   
   - name: "anomaly-analyzer"
-    type: "anomaly"
+    type: "analyzer"
     config:
       threshold: 2.0
   
   - name: "logger-responder"
-    type: "logger"
+    type: "responder"
     config:
       level: "info"
   
   - name: "ai-agent"
-    type: "ai"
+    type: "agent"
     config:
       api_key: "test-key"
       model: "gpt-3.5-turbo"

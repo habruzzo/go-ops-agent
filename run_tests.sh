@@ -4,7 +4,7 @@
 
 set -e
 
-echo "🧪 Running Observability Framework Tests"
+echo " Running Observability Framework Tests"
 echo "========================================"
 
 # Colors for output
@@ -121,7 +121,7 @@ else
     exit 1
 fi
 
-print_success "All tests completed successfully! 🎉"
+print_success "All tests completed successfully! "
 print_status "Test artifacts:"
 print_status "  - coverage.out: Coverage data"
 print_status "  - coverage.html: Coverage report (if generated)"

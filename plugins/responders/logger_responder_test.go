@@ -5,23 +5,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/holden/agent/core"
+	"github.com/habruzzo/agent/core"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestLoggerResponder_NewLoggerResponder(t *testing.T) {
 	responder := NewLoggerResponder("test-logger")
 
-	if responder.Name() != "test-logger" {
-		t.Errorf("Expected name 'test-logger', got %s", responder.Name())
-	}
-
-	if responder.Type() != core.PluginTypeResponder {
-		t.Errorf("Expected type 'responder', got %s", responder.Type())
-	}
-
-	if responder.Version() != "1.0.0" {
-		t.Errorf("Expected version '1.0.0', got %s", responder.Version())
-	}
+	assert.Equal(t, "test-logger", responder.Name(), "Expected correct name")
+	assert.Equal(t, core.PluginTypeResponder, responder.Type(), "Expected correct type")
+	assert.Equal(t, "1.0.0", responder.Version(), "Expected correct version")
 }
 
 func TestLoggerResponder_Configure(t *testing.T) {

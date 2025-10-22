@@ -9,15 +9,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/holden/agent/config"
-	"github.com/holden/agent/core"
-	"github.com/holden/agent/plugins/agents"
-	"github.com/holden/agent/plugins/analyzers"
-	"github.com/holden/agent/plugins/collectors"
-	"github.com/holden/agent/plugins/responders"
+	"github.com/habruzzo/agent/config"
+	"github.com/habruzzo/agent/core"
+	"github.com/habruzzo/agent/plugins/agents"
+	"github.com/habruzzo/agent/plugins/analyzers"
+	"github.com/habruzzo/agent/plugins/collectors"
+	"github.com/habruzzo/agent/plugins/responders"
 )
 
-func main() {
+func realAIMain() {
 	fmt.Println("Starting Real AI Agent for Observability")
 	fmt.Println("========================================")
 
@@ -132,15 +132,11 @@ func loadRealConfig() (*core.FrameworkConfig, error) {
 
 	// Create default config if file doesn't exist
 	cfg = &core.FrameworkConfig{
-		Logging: core.LoggingConfig{
-			Level:  "info",
-			Format: "text",
-			Output: "stdout",
-		},
-		Agent: core.AgentConfig{
-			DefaultAgent: "real-ai",
-		},
-		Plugins: []core.PluginConfig{},
+		LogLevel:     "info",
+		LogFormat:    "text",
+		LogOutput:    "stdout",
+		DefaultAgent: "real-ai",
+		Plugins:      []core.PluginConfig{},
 	}
 
 	// Save default config for future use

@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/holden/agent/core"
+	"github.com/habruzzo/agent/core"
 )
 
 // AIAgent implements the AgentPlugin interface using external AI APIs

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/holden/agent/core"
+	"github.com/habruzzo/agent/core"
 )
 
 func BenchmarkAnomalyAnalyzer_Analyze(b *testing.B) {

@@ -1,0 +1,25 @@
+# Plugin Configuration File
+# This file can be used to define additional plugins beyond the defaults
+
+- name: custom-collector
+  type: collector
+  enabled: true
+  config:
+    endpoint: http://custom-metrics:8080/metrics
+    interval: 60s
+    
+- name: custom-analyzer
+  type: analyzer
+  enabled: true
+  config:
+    algorithm: "statistical"
+    sensitivity: 0.9
+    
+- name: email-responder
+  type: responder
+  enabled: false  # Disabled by default
+  config:
+    smtp_host: smtp.example.com
+    smtp_port: 587
+    from_email: alerts@example.com
+    to_emails: ["admin@example.com"]
